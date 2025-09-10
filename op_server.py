@@ -1,11 +1,14 @@
-import json, time, requests
+import os, json, time, requests
 from typing import List, Dict, Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 from playwright.sync_api import sync_playwright
+import psycopg2, psycopg2.extras
 
-LLM_URL = "http://127.0.0.1:11434/api/generate"   # Ollama-compatible (optional)
-LLM_MODEL = "qwen2.5"
+# --- config from environment ---
+OP_DB_DSN  = os.getenv("OP_DB_DSN",  "postgresql:///operator")
+LLM_URL    = os.getenv("OP_LLM_URL", "http://127.0.0.1:11434/api/generate")
+LLM_MODEL  = os.getenv("OP_LLM_MODEL", "qwen2.5:0.5b")
 
 app = FastAPI(title="Operator")
 
@@ -13,6 +16,21 @@ class Task(BaseModel):
     goal: str
     site: str | None = None
 
+# --- DB logging ---
+def log_event(role: str, event: dict) -> None:
+    try:
+        conn = psycopg2.connect(OP_DB_DSN)
+        with conn, conn.cursor() as cur:
+            psycopg2.extras.register_default_jsonb(cur)
+            cur.execute(
+                "INSERT INTO op_events(role, event) VALUES (%s, %s::jsonb)",
+                (role, json.dumps(event))
+            )
+    except Exception:
+        # non-fatal; agent keeps running even if DB is down
+        pass
+
+# --- planner ---
 def llm_plan(goal: str) -> List[Dict[str, Any]]:
     prompt = f"""You are an Operator planner.
 Goal: {goal}
@@ -20,12 +38,15 @@ Return a JSON array (max 6 steps). Each step:
 {{"action":"open|type|click|press|wait|read","target":"CSS selector or URL","value":""}}."""
     try:
         r = requests.post(LLM_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+        r.raise_for_status()
         text = r.json().get("response","[]")
         plan = json.loads(text) if text.strip().startswith("[") else []
         if not plan:
-            raise ValueError("non-JSON plan")
+            raise ValueError("empty or non-JSON plan")
         return plan[:6]
-    except Exception:
+    except Exception as e:
+        log_event("planner_error", {"error": str(e)})
+        # safe fallback
         return [
             {"action":"open","target":"https://duckduckgo.com","value":""},
             {"action":"type","target":"input[name=q]","value":goal},
@@ -34,9 +55,10 @@ Return a JSON array (max 6 steps). Each step:
             {"action":"read","target":"","value":""}
         ]
 
+# --- executor ---
 def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True)  # uses Playwright-managed Chromium
         page = browser.new_page()
         log = []
         try:
@@ -60,12 +82,18 @@ def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
         finally:
             browser.close()
 
-@app.post("/tasks")
-def run_task(t: Task):
-    plan = llm_plan(t.goal)
-    result = run_browser_plan(plan)
-    return {"goal": t.goal, "plan": plan, "result": result}
-
+# --- routes ---
 @app.get("/health")
 def health():
     return {"ok": True}
+
+@app.post("/tasks")
+def run_task(t: Task):
+    log_event("user", {"goal": t.goal, "site": t.site})
+    plan = llm_plan(t.goal)
+    if t.site:
+        plan = [{"action":"open","target":t.site,"value":""}] + plan
+    log_event("planner", {"plan": plan})
+    result = run_browser_plan(plan)
+    log_event("executor", {"result": {"ok": result.get("ok", False), "n_steps": len(result.get("steps", []))}})
+    return {"goal": t.goal, "plan": plan, "result": result}
