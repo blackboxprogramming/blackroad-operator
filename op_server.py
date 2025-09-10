@@ -1,12 +1,11 @@
-# FILE: /home/pi/operator/operator.py
 import json, time, requests
 from typing import List, Dict, Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 from playwright.sync_api import sync_playwright
 
-LLM_URL = "http://127.0.0.1:11434/api/generate"   # Ollama-compatible endpoint (optional)
-LLM_MODEL = "qwen2.5"                              # or mistral, deepseek-r1, starcoder2, etc.
+LLM_URL = "http://127.0.0.1:11434/api/generate"   # Ollama-compatible (optional)
+LLM_MODEL = "qwen2.5"
 
 app = FastAPI(title="Operator")
 
@@ -20,14 +19,13 @@ Goal: {goal}
 Return a JSON array (max 6 steps). Each step:
 {{"action":"open|type|click|press|wait|read","target":"CSS selector or URL","value":""}}."""
     try:
-        r = requests.post(LLM_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=60)
+        r = requests.post(LLM_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
         text = r.json().get("response","[]")
         plan = json.loads(text) if text.strip().startswith("[") else []
         if not plan:
-            raise ValueError("LLM returned non-JSON plan")
+            raise ValueError("non-JSON plan")
         return plan[:6]
     except Exception:
-        # Fallback heuristic plan
         return [
             {"action":"open","target":"https://duckduckgo.com","value":""},
             {"action":"type","target":"input[name=q]","value":goal},
@@ -38,7 +36,7 @@ Return a JSON array (max 6 steps). Each step:
 
 def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)  # uses the Playwright-managed Chromium
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         log = []
         try:
@@ -53,7 +51,7 @@ def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
                 elif a == "press":
                     page.keyboard.press(v or "Enter")
                 elif a == "wait":
-                    time.sleep(int(v.replace("s","")) if v.endswith("s") else 3)
+                    time.sleep(int(v.replace("s","")) if isinstance(v,str) and v.endswith("s") else 3)
                 elif a == "read":
                     log.append({"read": page.content()[:2000]})
                 log.append({"done": step})
@@ -67,3 +65,7 @@ def run_task(t: Task):
     plan = llm_plan(t.goal)
     result = run_browser_plan(plan)
     return {"goal": t.goal, "plan": plan, "result": result}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
