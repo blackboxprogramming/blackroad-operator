@@ -1,0 +1,7 @@
+from tls_guard import assert_leaf_sha256
+PIN_CLAUDE = "7FEF338CADC4883D5440FDCEB7CBB6E3C6414587475AF0886D1976458D068180"
+PIN_API    = "D697F9DADA74E260BA6F6A18EF55772ECC9715D320685D7F852633C70CC0E03A"
+
+def tls_preflight():
+    assert_leaf_sha256("claude.ai", PIN_CLAUDE)
+    assert_leaf_sha256("api.anthropic.com", PIN_API)

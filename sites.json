@@ -1,0 +1,14 @@
+{
+  "duckduckgo.com": {
+    "instructions": [
+      "If the goal is to find official docs, prefer clicking result links that contain 'Docs' or 'Documentation' in title or URL.",
+      "Avoid ads or sponsored results."
+    ]
+  },
+  "unity.com": {
+    "instructions": [
+      "Prefer paths containing '/docs' or 'ml-agents'.",
+      "If a cookie/banner blocks content, click the minimal 'Accept' button first."
+    ]
+  }
+}
