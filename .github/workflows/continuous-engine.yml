@@ -72,7 +72,7 @@ jobs:
     needs: health
     timeout-minutes: 360  # 6 hour GitHub limit — we exit at 5h55m and re-chain
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: "Run work loop (5h 55min then re-chain)"
         run: |
@@ -136,7 +136,7 @@ jobs:
     runs-on: [self-hosted, blackroad-fleet]
     needs: health
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: "Cross-org sync check"
         run: |
