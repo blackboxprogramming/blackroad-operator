@@ -2,20 +2,17 @@ name: CORE CI
 
 on:
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   push:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
-  guard:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Guardrail
-        run: echo "CORE repo guardrail active"
-
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Lint placeholder
-        run: echo "Add lint/test here"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check
+        run: python -m py_compile op_server.py app_bootstrap.py tls_guard.py

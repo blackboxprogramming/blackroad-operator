@@ -1,16 +1,21 @@
 import os, json, time, requests
 from typing import List, Dict, Any
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from playwright.sync_api import sync_playwright
 import psycopg2, psycopg2.extras
+from app_bootstrap import PI_NODES, pi_preflight
 
 # --- config from environment ---
-OP_DB_DSN  = os.getenv("OP_DB_DSN",  "postgresql:///operator")
-LLM_URL    = os.getenv("OP_LLM_URL", "http://127.0.0.1:11434/api/generate")
-LLM_MODEL  = os.getenv("OP_LLM_MODEL", "qwen2.5:0.5b")
+OP_DB_DSN = os.getenv("OP_DB_DSN", "postgresql:///operator")
 
-app = FastAPI(title="Operator")
+# Pi cluster LLM — Ollama runs on the Pi nodes, not an external provider
+PI_LLM_HOST = os.getenv("OP_PI_LLM_HOST", "192.168.4.49")  # alice by default
+PI_LLM_PORT = os.getenv("OP_PI_LLM_PORT", "11434")
+PI_LLM_URL  = os.getenv("OP_LLM_URL", f"http://{PI_LLM_HOST}:{PI_LLM_PORT}/api/generate")
+LLM_MODEL   = os.getenv("OP_LLM_MODEL", "qwen2.5:0.5b")
+
+app = FastAPI(title="BlackRoad Operator — Pi Cluster")
 
 class Task(BaseModel):
     goal: str
@@ -27,12 +32,11 @@ def log_event(role: str, event: dict) -> None:
                 (role, json.dumps(event))
             )
     except Exception:
-        # keep running even if DB is down
         pass
 
-# --- small readiness probe for Ollama ---
+# --- Pi cluster LLM readiness probe ---
 def wait_for_llm(timeout=20) -> bool:
-    tags_url = LLM_URL.replace('/api/generate','/api/tags')
+    tags_url = PI_LLM_URL.replace('/api/generate', '/api/tags')
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -44,16 +48,16 @@ def wait_for_llm(timeout=20) -> bool:
         time.sleep(1)
     return False
 
-# --- planner ---
+# --- planner (runs on Pi cluster LLM) ---
 def llm_plan(goal: str) -> List[Dict[str, Any]]:
     prompt = f"""You are an Operator planner.
 Goal: {goal}
 Return a JSON array (max 6 steps). Each step:
 {{"action":"open|type|click|press|wait|read","target":"CSS selector or URL","value":""}}."""
     try:
-        r = requests.post(LLM_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+        r = requests.post(PI_LLM_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
         r.raise_for_status()
-        text = r.json().get("response","[]")
+        text = r.json().get("response", "[]")
         plan = json.loads(text) if text.strip().startswith("[") else []
         if not plan:
             raise ValueError("empty or non-JSON plan")
@@ -61,11 +65,11 @@ Return a JSON array (max 6 steps). Each step:
     except Exception as e:
         log_event("planner_error", {"error": str(e)})
         return [
-            {"action":"open","target":"https://duckduckgo.com","value":""},
-            {"action":"type","target":"input[name=q]","value":goal},
-            {"action":"press","target":"","value":"Enter"},
-            {"action":"wait","target":"","value":"3s"},
-            {"action":"read","target":"","value":""}
+            {"action": "open", "target": "https://duckduckgo.com", "value": ""},
+            {"action": "type", "target": "input[name=q]", "value": goal},
+            {"action": "press", "target": "", "value": "Enter"},
+            {"action": "wait", "target": "", "value": "3s"},
+            {"action": "read", "target": "", "value": ""}
         ]
 
 # --- executor ---
@@ -76,7 +80,7 @@ def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
         log = []
         try:
             for step in plan:
-                a = step.get("action",""); t = step.get("target",""); v = step.get("value","")
+                a = step.get("action", ""); t = step.get("target", ""); v = step.get("value", "")
                 if a == "open":
                     page.goto(t or "https://duckduckgo.com", wait_until="domcontentloaded")
                 elif a == "type":
@@ -87,7 +91,7 @@ def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
                     page.keyboard.press(v or "Enter")
                 elif a == "wait":
                     try:
-                        secs = int(v.replace("s","")) if isinstance(v,str) and v.endswith("s") else 3
+                        secs = int(v.replace("s", "")) if isinstance(v, str) and v.endswith("s") else 3
                     except Exception:
                         secs = 3
                     time.sleep(secs)
@@ -102,33 +106,39 @@ def run_browser_plan(plan: List[Dict[str, Any]]) -> Dict[str, Any]:
 # --- routes ---
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "cluster": "pi"}
 
 @app.get("/llm/health")
 def llm_health():
     try:
-        tags_url = LLM_URL.replace('/api/generate','/api/tags')
+        tags_url = PI_LLM_URL.replace('/api/generate', '/api/tags')
         r = requests.get(tags_url, timeout=2)
-        return {"ok": r.ok}
+        return {"ok": r.ok, "host": PI_LLM_HOST}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+@app.get("/cluster/health")
+def cluster_health():
+    from tls_guard import check_pi_node
+    status = {}
+    for name, ip in PI_NODES.items():
+        status[name] = {"ip": ip, "reachable": check_pi_node(ip)}
+    return {"ok": any(n["reachable"] for n in status.values()), "nodes": status}
+
 @app.post("/tasks")
 def run_task(t: Task):
-    # brief wait so we don't 404 if Ollama is still starting
     if not wait_for_llm(10):
-        log_event("planner_error", {"error": "LLM not ready", "url": LLM_URL})
+        log_event("planner_error", {"error": "Pi LLM not ready", "url": PI_LLM_URL})
     log_event("user", {"goal": t.goal, "site": t.site})
     plan = llm_plan(t.goal)
     if t.site:
-        plan = [{"action":"open","target":t.site,"value":""}] + plan
+        plan = [{"action": "open", "target": t.site, "value": ""}] + plan
     log_event("planner", {"plan": plan})
     result = run_browser_plan(plan)
     log_event("executor", {"result": {"ok": result.get("ok", False), "n_steps": len(result.get("steps", []))}})
     return {"goal": t.goal, "plan": plan, "result": result}
 
 # --- Simulation tool: Gymnasium (MuJoCo / others) ---
-from pydantic import Field
 from PIL import Image
 import numpy as np, io, base64, gymnasium as gym
 
@@ -147,9 +157,8 @@ def _encode_png(frame: np.ndarray) -> str:
 
 @app.post("/tools/sim.run")
 def sim_run(req: SimReq):
-    # Configure headless rendering if requested (works for MuJoCo)
     if req.render and req.mujoco_gl and not os.getenv("MUJOCO_GL"):
-        os.environ["MUJOCO_GL"] = req.mujoco_gl  # 'egl' on Jetson, 'osmesa' on Pi CPU
+        os.environ["MUJOCO_GL"] = req.mujoco_gl
 
     render_mode = "rgb_array" if req.render else None
     try:
@@ -198,9 +207,8 @@ def sim_run(req: SimReq):
     return payload
 
 # --- Code runner tool (Docker / Python) ---
-from pydantic import Field
 from pathlib import Path
-import tempfile, shutil, subprocess, base64
+import tempfile, shutil, subprocess
 
 class CodeRunReq(BaseModel):
     language: str = Field("python", description="Only 'python' supported for now")
@@ -216,18 +224,18 @@ def code_run(req: CodeRunReq):
 
     tmp = Path(tempfile.mkdtemp(prefix="op-code-"))
     try:
-        (tmp/"main.py").write_text(req.code)
+        (tmp / "main.py").write_text(req.code)
         if req.deps:
-            (tmp/"requirements.txt").write_text("\n".join(req.deps) + "\n")
+            (tmp / "requirements.txt").write_text("\n".join(req.deps) + "\n")
 
         cmd = [
-            "docker","run","--rm",
-            "--network","none",
-            "--pids-limit","256",
-            "--memory","512m",
+            "docker", "run", "--rm",
+            "--network", "none",
+            "--pids-limit", "256",
+            "--memory", "512m",
             "-v", f"{tmp}:/work",
             "-w", "/work",
-            "python:3.11-slim","bash","-lc",
+            "python:3.11-slim", "bash", "-lc",
             "set -e; "
             "python -m venv .venv; . .venv/bin/activate; "
             "if [ -f requirements.txt ]; then pip -q install --no-cache-dir -r requirements.txt; fi; "
@@ -240,7 +248,7 @@ def code_run(req: CodeRunReq):
         if req.return_files:
             out = {}
             for name in req.return_files:
-                fp = tmp/name
+                fp = tmp / name
                 if fp.exists() and fp.is_file():
                     out[name] = base64.b64encode(fp.read_bytes()).decode("ascii")
             if out:
@@ -256,10 +264,12 @@ def code_run(req: CodeRunReq):
         log_event("code_run", {"ok": False, "error": str(e)})
         return {"ok": False, "error": str(e)}
     finally:
-        try: shutil.rmtree(tmp)
-        except Exception: pass
+        try:
+            shutil.rmtree(tmp)
+        except Exception:
+            pass
 
-# --- Git PR tool (gh) ---
+# --- Git PR tool ---
 class FileSpec(BaseModel):
     path: str
     content: str
@@ -270,7 +280,7 @@ class GitPrReq(BaseModel):
     body: str = ""
     commit_message: str = "Operator update"
     files: list[FileSpec]
-    repo_path: str | None = None  # defaults to /home/pi/operator
+    repo_path: str | None = None
 
 def _run(cwd, *cmd):
     p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -279,7 +289,7 @@ def _run(cwd, *cmd):
 @app.post("/tools/git.pr")
 def git_pr(req: GitPrReq):
     repo = Path(req.repo_path or "/home/pi/operator")
-    if not (repo/".git").exists():
+    if not (repo / ".git").exists():
         return {"ok": False, "error": f"not a git repo: {repo}"}
     try:
         _run(repo, "git", "fetch", "origin")
@@ -292,7 +302,6 @@ def git_pr(req: GitPrReq):
 
         _run(repo, "git", "add", "-A")
         rc, out, err = _run(repo, "git", "commit", "-m", req.commit_message)
-        # empty commit is fine
 
         rc, out, err = _run(repo, "git", "push", "-u", "origin", req.branch)
         if rc != 0:

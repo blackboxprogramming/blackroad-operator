@@ -1,8 +1,8 @@
-name: 🔒 Security Scan
+name: Security Scan
 
 on:
   push:
-    branches: [main, master, dev]
+    branches: [main, master]
   pull_request:
     branches: [main, master]
   schedule:
@@ -18,38 +18,18 @@ jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['javascript', 'typescript', 'python']
-    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
         with:
-          languages: ${{ matrix.language }}
-      
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-      
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+          languages: python
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
 
-  dependency-scan:
-    name: Dependency Scan
+  dependency-review:
+    name: Dependency Review
     runs-on: ubuntu-latest
-    
+    if: github.event_name == 'pull_request'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Run npm audit
-        if: hashFiles('package.json') != ''
-        run: npm audit --audit-level=moderate || true
-      
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        if: github.event_name == 'pull_request'
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4

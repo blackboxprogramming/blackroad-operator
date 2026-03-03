@@ -1,22 +1,5 @@
 version: 2
 updates:
-  # npm dependencies
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    reviewers:
-      - "blackboxprogramming"
-    labels:
-      - "dependencies"
-      - "automated"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -29,7 +12,6 @@ updates:
     commit-message:
       prefix: "ci"
 
-  # pip dependencies
   - package-ecosystem: "pip"
     directory: "/"
     schedule:

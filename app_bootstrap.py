@@ -1,7 +1,19 @@
-from tls_guard import assert_leaf_sha256
-PIN_CLAUDE = "7FEF338CADC4883D5440FDCEB7CBB6E3C6414587475AF0886D1976458D068180"
-PIN_API    = "D697F9DADA74E260BA6F6A18EF55772ECC9715D320685D7F852633C70CC0E03A"
+import socket
 
-def tls_preflight():
-    assert_leaf_sha256("claude.ai", PIN_CLAUDE)
-    assert_leaf_sha256("api.anthropic.com", PIN_API)
+# BlackRoad Pi cluster nodes — all routing goes through these
+PI_NODES = {
+    "alice":   "192.168.4.49",
+    "aria":    "192.168.4.38",
+    "lucidia": "192.168.4.99",
+}
+
+def pi_preflight(timeout: float = 2.0):
+    """Verify at least one Pi node is reachable before starting."""
+    for name, ip in PI_NODES.items():
+        try:
+            s = socket.create_connection((ip, 8000), timeout=timeout)
+            s.close()
+            return name, ip
+        except OSError:
+            continue
+    raise RuntimeError("No Pi cluster nodes reachable: " + ", ".join(PI_NODES))
