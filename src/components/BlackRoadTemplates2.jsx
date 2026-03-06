@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-const GRAD = "linear-gradient(90deg, #FF8400, #FF4400, #FF0066, #CC00AA, #8800FF, #0066FF, #2233CC)";
-const font = {
+export const GRAD = "linear-gradient(90deg, #FF8400, #FF4400, #FF0066, #CC00AA, #8800FF, #0066FF, #2233CC)";
+export const font = {
   headline: "'Space Grotesk', sans-serif",
   mono: "'JetBrains Mono', monospace",
 };
