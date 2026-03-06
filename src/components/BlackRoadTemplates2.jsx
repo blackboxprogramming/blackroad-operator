@@ -6,7 +6,7 @@ export const font = {
   mono: "'JetBrains Mono', monospace",
 };
 
-export default function BlackRoadTemplates2() {
+export default function BlackRoadAppTemplates() {
   const [active, setActive] = useState("login");
 
   const templates = [
