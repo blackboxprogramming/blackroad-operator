@@ -200,7 +200,7 @@ function PricingTemplate() {
         <div style={{ height: 2, background: GRAD, width: 120, margin: "28px auto 0" }} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0, borderBottom: "1px solid #fff" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 0, borderBottom: "1px solid #fff" }}>
         {plans.map((p, i) => (
           <div key={i} style={{
             padding: "40px 24px",
