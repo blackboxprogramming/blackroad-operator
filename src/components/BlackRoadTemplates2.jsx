@@ -479,15 +479,28 @@ function DocsTemplate() {
                 {group.section}
               </div>
               {group.items.map((item) => (
-                <div key={item.id} onClick={() => setActivePage(item.id)} style={{
-                  fontSize: "0.54rem", padding: "6px 0", cursor: "pointer",
-                  opacity: activePage === item.id ? 1 : 0.35,
-                  fontWeight: activePage === item.id ? 700 : 400,
-                  borderLeft: activePage === item.id ? "1px solid #fff" : "1px solid transparent",
-                  paddingLeft: 12, transition: "all 0.1s",
-                }}>
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActivePage(item.id)}
+                  style={{
+                    fontSize: "0.54rem",
+                    padding: "6px 0",
+                    cursor: "pointer",
+                    opacity: activePage === item.id ? 1 : 0.35,
+                    fontWeight: activePage === item.id ? 700 : 400,
+                    borderLeft: activePage === item.id ? "1px solid #fff" : "1px solid transparent",
+                    paddingLeft: 12,
+                    transition: "all 0.1s",
+                    background: "none",
+                    border: "none",
+                    color: "inherit",
+                    textAlign: "left",
+                    width: "100%",
+                  }}
+                >
                   {item.label}
-                </div>
+                </button>
               ))}
             </div>
           ))}
