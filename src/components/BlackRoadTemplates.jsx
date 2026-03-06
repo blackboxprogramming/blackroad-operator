@@ -530,11 +530,42 @@ function Row({ children, last }) {
 
 function Dot({ color, size = 7, pulse }) {
   return (
-    <span style={{
-      width: size, height: size, borderRadius: "50%", background: color,
-      display: "inline-block", flexShrink: 0,
-      animation: pulse ? "pulse-dot 1.5s ease-in-out infinite" : "none",
-    }} />
+    <>
+      {pulse && (
+        <style>
+          {`
+            @keyframes pulse-dot {
+              0% {
+                transform: scale(1);
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+              }
+              70% {
+                transform: scale(1.6);
+                opacity: 0.4;
+                box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+              }
+              100% {
+                transform: scale(1);
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+              }
+            }
+          `}
+        </style>
+      )}
+      <span
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          background: color,
+          display: "inline-block",
+          flexShrink: 0,
+          animation: pulse ? "pulse-dot 1.5s ease-in-out infinite" : "none",
+        }}
+      />
+    </>
   );
 }
 
