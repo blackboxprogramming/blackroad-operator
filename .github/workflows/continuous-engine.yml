@@ -110,7 +110,7 @@ jobs:
 
       - name: "Trigger next chain link (+3 seconds)"
         if: env.MODE == 'perpetual'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             // Wait 3 seconds then fire next chain
